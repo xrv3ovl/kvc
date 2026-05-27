@@ -59,7 +59,9 @@ kvc lock trusted totalcmd64.exe on    add trusted process (bypasses all flags)
 kvc lock trusted totalcmd64.exe off   remove trusted process
 ```
 
-**GUI:** dark mode, Mica backdrop, drag & drop from Explorer (`.lnk` shortcuts resolved via COM `IShellLink`). Flag columns toggle live — no apply button. `Shift+Minimize` sends the window to system tray; `Ctrl+C` in the parent terminal does not affect the GUI (spawned detached). See screenshot below.
+**GUI:** dark mode, Mica backdrop, drag & drop from Explorer (`.lnk` shortcuts resolved via COM `IShellLink`). Flag columns toggle live — no apply button. `Shift+Minimize` sends the window to system tray; `Ctrl+C` in the parent terminal does not affect the GUI (spawned detached).
+
+![kvc lock — VaultGuard GUI](images/kvc_07.png)
 
 **Assembly internals:** 10 MASM source files, zero CRT. Every non-leaf function maintains strict x64 ABI — `rsp % 16 == 0` before every `call`, 32-byte shadow space at every call site, callee-saved registers pushed/restored at every boundary.
 
