@@ -23,7 +23,7 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 **[27.05.2026]**
 
 <details>
-<summary><strong>🔒 kvc lock — VaultGuard GUI integrated into kvc.exe; folder/partition blocking, system tray, pure x64 assembly GUI</strong> (click to expand)</summary>
+<summary><strong>🔒 kvc lock — VaultGuard CLI/GUI integrated into kvc.exe; folder/partition blocking, system tray, pure x64 assembly</strong> (click to expand)</summary>
 
 #### kvc lock
 
