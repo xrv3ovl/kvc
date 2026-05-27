@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include "HelpSystem.h"
 #include <iostream>
 #include <iomanip>
@@ -69,6 +69,7 @@ void HelpSystem::PrintUsage(std::wstring_view programName) noexcept
     PrintUnderVolterCommands();
     PrintForensicCommands();
     PrintEntertainmentCommands();
+    PrintBlockerCommands();
     PrintProtectionTypes();
     PrintExclusionTypes();
     PrintPatternMatching();
@@ -92,7 +93,7 @@ void HelpSystem::PrintHeader() noexcept
     std::wcout << L"\n" << HelpLayout::MakeBorder() << L"\n";
 
     PrintCentered(L"Marek Wesolowski - WESMAR - 2025", hConsole, Colors::WHITE_BRIGHT);
-    PrintCentered(L"kvc.exe v1.0.3 https://kvc.pl", hConsole, Colors::WHITE_BRIGHT);
+    PrintCentered(L"kvc.exe v1.0.4 https://kvc.pl", hConsole, Colors::WHITE_BRIGHT);
     PrintCentered(L"+48 607-440-283, marek@wesolowski.eu.org", hConsole, Colors::WHITE_BRIGHT);
     PrintCentered(L"kvc - Kernel Vulnerability Capabilities Framework", hConsole, Colors::WHITE_BRIGHT);
     PrintCentered(L"Comprehensive Windows Security Research & Penetration Framework", hConsole, Colors::WHITE_BRIGHT);
@@ -383,6 +384,28 @@ void HelpSystem::PrintEntertainmentCommands() noexcept
     PrintCommandLine(L"--tetris", L"Launch classic Tetris game (x64 assembly)");
     PrintNote(L"Arrow keys to move/rotate, Space for hard drop, P to pause");
     PrintNote(L"Press F2 to start new game, ESC to exit");
+    std::wcout << L"\n";
+}
+
+void HelpSystem::PrintBlockerCommands() noexcept
+{
+    PrintSectionHeader(L"Filesystem Blocker (kvcblocker.sys)");
+    PrintCommandLine(L"lock --gui",               L"Open VaultGuard protection GUI");
+    PrintCommandLine(L"lock --tray",              L"Open VaultGuard GUI minimized to tray");
+    PrintCommandLine(L"lock status",              L"Driver status: active, path count, trusted count");
+    PrintCommandLine(L"lock on",                  L"Enable filesystem protection globally");
+    PrintCommandLine(L"lock off",                 L"Disable filesystem protection globally");
+    PrintCommandLine(L"lock add <path> <mode>",   L"Protect folder (Hidden|Locked|ReadOnly|NoExec|All)");
+    PrintCommandLine(L"lock remove <path>",       L"Remove folder from protection");
+    PrintCommandLine(L"lock allow <app.exe>",     L"Add process to bypass list (case-insensitive)");
+    PrintCommandLine(L"lock unallow <app.exe>",   L"Remove process from bypass list");
+    PrintCommandLine(L"lock list",                L"Show driver status and counts");
+    PrintCommandLine(L"lock clear",               L"Remove all protected paths and trusted entries");
+    PrintNote(L"Kernel minifilter driver, altitude 389991 (FSFilter Content Screener)");
+    PrintNote(L"Service: clrcd  |  Device: BE79F7D8-53E6-4308-9D51-EDCDA79805C4");
+    PrintNote(L"Driver deployed by 'kvc list' or automatically on first 'kvc lock' command");
+    PrintNote(L"Protection modes: Hidden=hide from shell, Locked=block all writes,");
+    PrintNote(L"  ReadOnly=block writes allow reads, NoExec=block execution");
     std::wcout << L"\n";
 }
 

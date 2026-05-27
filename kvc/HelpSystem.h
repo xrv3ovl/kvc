@@ -26,6 +26,7 @@ public:
     static void PrintUsage(std::wstring_view programName) noexcept;
     static void PrintUnknownCommandMessage(std::wstring_view command) noexcept;
     static void PrintBrowserCommands() noexcept;
+    static void PrintBlockerCommands() noexcept;
 
 private:
     // Main sections

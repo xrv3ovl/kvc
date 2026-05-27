@@ -27,6 +27,17 @@
 // Tetris game entry point from x64 assembly
 extern "C" int TetrisMain();
 
+// VaultGuard GUI entry point from vg\main.asm
+extern "C" void VgGuiMain();
+
+// IOCTL wrappers exported by ControllerBlocker.cpp, called by vg asm and kvc.cpp
+extern "C" INT_PTR IoctlSetActive(DWORD active);
+extern "C" INT_PTR IoctlAddPath(DWORD flags, const WCHAR* dosPath);
+extern "C" INT_PTR IoctlRemovePath(const WCHAR* dosPath);
+extern "C" INT_PTR IoctlAddTrusted(const WCHAR* name);
+extern "C" INT_PTR IoctlRemoveTrusted(const WCHAR* name);
+extern "C" INT_PTR IoctlClearAll();
+
 // ============================================================================
 // GLOBAL STATE
 // ============================================================================
@@ -341,6 +352,119 @@ int HandleDseCommand(int argc, wchar_t* argv[]) {
     }
 }
 
+// Declared in vg\globals.inc; set by kvc.cpp before calling VgGuiMain
+extern "C" DWORD g_startMinimized;
+
+static bool SpawnVgDaemon(bool minimized) noexcept {
+    WCHAR self[MAX_PATH];
+    if (!GetModuleFileNameW(nullptr, self, MAX_PATH))
+        return false;
+    std::wstring cmd = std::wstring(L"\"") + self + L"\" lock --vgdaemon";
+    if (minimized) cmd += L" --tray";
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr,
+                             FALSE, DETACHED_PROCESS | CREATE_NO_WINDOW,
+                             nullptr, nullptr, &si, &pi);
+    if (ok) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+    return ok != FALSE;
+}
+
+int HandleLockCommand(int argc, wchar_t* argv[]) {
+    if (argc < 3) {
+        HelpSystem::PrintBlockerCommands();
+        return 0;
+    }
+    std::wstring sub = argv[2];
+
+    if (sub == L"--gui" || sub == L"gui") {
+        if (!SpawnVgDaemon(false)) { ERROR(L"Failed to spawn VaultGuard GUI"); return 1; }
+        return 0;
+    }
+    if (sub == L"--tray" || sub == L"tray") {
+        if (!SpawnVgDaemon(true)) { ERROR(L"Failed to spawn VaultGuard GUI"); return 1; }
+        return 0;
+    }
+    if (sub == L"--vgdaemon") {
+        bool tray = (argc >= 4 && _wcsicmp(argv[3], L"--tray") == 0);
+        g_controller->EnsureBlockerDriver();
+        g_startMinimized = tray ? 1 : 0;
+        VgGuiMain();
+        return 0;
+    }
+    if (sub == L"status") {
+        std::wstring s = g_controller->GetBlockerStatus();
+        INFO(L"kvcblocker: %s", s.c_str());
+        return 0;
+    }
+    if (sub == L"on") {
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        IoctlSetActive(1);
+        SUCCESS(L"Protection enabled");
+        return 0;
+    }
+    if (sub == L"off") {
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        IoctlSetActive(0);
+        INFO(L"Protection disabled");
+        return 0;
+    }
+    if (sub == L"add") {
+        if (argc < 5) { ERROR(L"Usage: kvc lock add <path> <Hidden|Locked|ReadOnly|NoExec>"); return 1; }
+        std::wstring mode = argv[4];
+        DWORD flags = 0;
+        if (_wcsicmp(mode.c_str(), L"Hidden")   == 0) flags = 0x01;
+        else if (_wcsicmp(mode.c_str(), L"Locked")   == 0) flags = 0x02;
+        else if (_wcsicmp(mode.c_str(), L"ReadOnly") == 0) flags = 0x04;
+        else if (_wcsicmp(mode.c_str(), L"NoExec")   == 0) flags = 0x08;
+        else if (_wcsicmp(mode.c_str(), L"All")      == 0) flags = 0x0F;
+        else { ERROR(L"Unknown mode: %s  (Hidden|Locked|ReadOnly|NoExec|All)", mode.c_str()); return 1; }
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        if (!IoctlAddPath(flags, argv[3])) { ERROR(L"Failed to add path"); return 1; }
+        SUCCESS(L"Protected: %s [%s]", argv[3], mode.c_str());
+        return 0;
+    }
+    if (sub == L"remove") {
+        if (argc < 4) { ERROR(L"Usage: kvc lock remove <path>"); return 1; }
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        if (!IoctlRemovePath(argv[3])) { ERROR(L"Failed to remove path"); return 1; }
+        SUCCESS(L"Unprotected: %s", argv[3]);
+        return 0;
+    }
+    if (sub == L"allow") {
+        if (argc < 4) { ERROR(L"Usage: kvc lock allow <app.exe>"); return 1; }
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        if (!IoctlAddTrusted(argv[3])) { ERROR(L"Failed to add trusted app"); return 1; }
+        SUCCESS(L"Trusted: %s", argv[3]);
+        return 0;
+    }
+    if (sub == L"unallow") {
+        if (argc < 4) { ERROR(L"Usage: kvc lock unallow <app.exe>"); return 1; }
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        IoctlRemoveTrusted(argv[3]);
+        INFO(L"Removed from trusted (all trusted cleared, registry reloaded)");
+        return 0;
+    }
+    if (sub == L"list") {
+        std::wstring s = g_controller->GetBlockerStatus();
+        INFO(L"kvcblocker: %s", s.c_str());
+        return 0;
+    }
+    if (sub == L"clear") {
+        if (!g_controller->EnsureBlockerDriver()) return 1;
+        IoctlClearAll();
+        SUCCESS(L"All protected paths and trusted entries cleared");
+        return 0;
+    }
+    ERROR(L"Unknown lock subcommand: %s", sub.c_str());
+    HelpSystem::PrintBlockerCommands();
+    return 1;
+}
+
 int HandleSecEngineCommand(int argc, wchar_t* argv[]) {
     if (argc < 3) {
         ERROR(L"Missing subcommand for secengine. Usage: kvc secengine <disable|enable|status>");
@@ -348,7 +472,7 @@ int HandleSecEngineCommand(int argc, wchar_t* argv[]) {
     }
     std::wstring_view sub = argv[2];
 
-    // ── disable ──────────────────────────────────────────────────────────────
+    // disable:
     // Writes IFEO blocks for MsMpEng/SecurityHealthSystray/SecurityHealthService,
     // then kernel-kills the running processes via kvckiller.sys (wsftprm service).
     // No restart required.
@@ -447,7 +571,7 @@ int HandleSecEngineCommand(int argc, wchar_t* argv[]) {
                 DeleteService(hKillerSvc);
             }
         } else {
-            INFO(L"kvckiller service failed to start — processes may still be running");
+            INFO(L"kvckiller service failed to start - processes may still be running");
         }
 
         if (hKillerSvc)  CloseServiceHandle(hKillerSvc);
@@ -456,7 +580,7 @@ int HandleSecEngineCommand(int argc, wchar_t* argv[]) {
         return 0;
     }
 
-    // ── enable ───────────────────────────────────────────────────────────────
+    // enable:
     // Removes IFEO Debugger block, then starts WinDefend via SCM.
     // MsMpEng.exe launches on its own - no restart needed.
     if (sub == L"enable") {
@@ -466,7 +590,7 @@ int HandleSecEngineCommand(int argc, wchar_t* argv[]) {
         return 1;
     }
 
-    // ── status ───────────────────────────────────────────────────────────────
+    // status:
     if (sub == L"status") {
         auto s = DefenderManager::QueryStatus();
         HANDLE hCon = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -851,6 +975,9 @@ int wmain(int argc, wchar_t* argv[])
             return g_controller->ListProcessesBySigner(argv[2]) ? 0 : 1;
         }},
 
+        // --- Filesystem Blocker ---
+        {L"lock",      HandleLockCommand},
+
         // --- Defender & Security ---
         {L"secengine", HandleSecEngineCommand},
         {L"disable-defender", [](int argc, wchar_t** argv) {
@@ -975,11 +1102,11 @@ int wmain(int argc, wchar_t* argv[])
             return ok ? 0 : 2;
         }},
         {L"analyze", [](int argc, wchar_t** argv) {
-            // kvc analyze --gui  →  open KvcForensic GUI
+            // kvc analyze --gui  ->  open KvcForensic GUI
             if (argc >= 3 && (_wcsicmp(argv[2], L"--gui") == 0 || _wcsicmp(argv[2], L"--cli") == 0)) {
                 return g_controller->LaunchForensicGui() ? 0 : 2;
             }
-            // kvc analyze lsass  →  smart-find most recent lsass dump
+            // kvc analyze lsass  ->  smart-find most recent lsass dump
             std::wstring dumpPath;
             if (argc >= 3 && _wcsicmp(argv[2], L"lsass") == 0) {
                 auto searchDir = [&](const std::wstring& dir) {

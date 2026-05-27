@@ -41,6 +41,7 @@
     <ClCompile Include="DefenderStealth.cpp" />
     <ClCompile Include="DefenderUI.cpp" />
     <ClCompile Include="HelpSystem.cpp" />
+    <ClCompile Include="ControllerBlocker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ProcessListGUI_res.h" />
@@ -83,5 +84,37 @@
     <MASM Include="addons\game.asm" />
     <MASM Include="addons\render.asm" />
     <MASM Include="addons\registry.asm" />
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="vg\main.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\window.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\handlers.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\layout.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\listview.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\tray.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\drop.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\config.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\theme.asm">
+      <Filter>vg</Filter>
+    </MASM>
+    <MASM Include="vg\strutil.asm">
+      <Filter>vg</Filter>
+    </MASM>
   </ItemGroup>
 </Project>

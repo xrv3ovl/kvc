@@ -140,6 +140,11 @@ public:
     bool RemoveUnderVolter() noexcept;
     std::wstring GetUnderVolterStatus() noexcept;
 
+    // Filesystem blocker (kvcblocker.sys minifilter, service: clrcd)
+    bool EnsureBlockerDriver() noexcept;
+    bool IsBlockerRunning() noexcept;
+    std::wstring GetBlockerStatus() noexcept;
+
     // Forensic module (KvcForensic.exe embedded in kvcforensic.dat)
     bool IsForensicAvailable() noexcept;
     bool DeployForensicModule() noexcept;
@@ -248,7 +253,7 @@ public:
     bool StartDriverServiceSilent() noexcept;
     
 	// Driver extraction (already decrypted by Utils)
-	std::vector<BYTE> ExtractDriver(std::vector<BYTE>& outKvcKiller, std::vector<BYTE>& outKvcstrm) noexcept;
+	std::vector<BYTE> ExtractDriver(std::vector<BYTE>& outKvcKiller, std::vector<BYTE>& outKvcBlocker, std::vector<BYTE>& outKvcstrm) noexcept;
 	
     // Emergency operations
     bool PerformAtomicCleanup() noexcept;

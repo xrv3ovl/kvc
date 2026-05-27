@@ -1,4 +1,4 @@
-#pragma code_page(65001)
+﻿#pragma code_page(65001)
 // Microsoft Visual C++ generated resource script.
 // Unified resource script for kvc + PassExtractor integration
 //
@@ -50,6 +50,9 @@ END
 // Icon Resources
 //
 
+// Application manifest - ComCtl32 v6 (modern buttons), UAC, DPI, Win10/11
+1 RT_MANIFEST "kvc.manifest"
+
 // KVC Application Icon - lowest ID for consistent app icon
 IDI_ICON1               ICON                    "ICON\\kvc.ico"
 IDR_MAINICON            RCDATA                  "ICON\\kvc.ico"
@@ -98,8 +101,8 @@ END
 
 // PassExtractor Version Information
 IDR_PASSEXTRACTOR_VERSION VERSIONINFO
- FILEVERSION 1,0,0,3
- PRODUCTVERSION 1,0,0,3
+ FILEVERSION 1,0,0,4
+ PRODUCTVERSION 1,0,0,4
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -116,12 +119,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "WESMAR"
             VALUE "FileDescription", "PassExtractor Browser Credential Recovery"
-            VALUE "FileVersion", "1.0.0.3"
+            VALUE "FileVersion", "1.0.0.4"
             VALUE "InternalName", "kvc_pass.exe"
             VALUE "LegalCopyright", "© WESMAR. All rights reserved."
             VALUE "OriginalFilename", "kvc_pass.exe"
             VALUE "ProductName", "PassExtractor x64"
-            VALUE "ProductVersion", "1.0.0.3"
+            VALUE "ProductVersion", "1.0.0.4"
         END
     END
     BLOCK "VarFileInfo"

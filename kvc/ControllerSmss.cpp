@@ -446,8 +446,8 @@ bool Controller::InstallSmssDriver(const std::wstring& driverArg, bool usePdb) n
     INFO(L"Installing SMSS boot-phase driver loader...");
 
     // --- 0. Extract all embedded components ---
-    std::vector<BYTE> kvcSysData, kvckillerData, kvcstrmData, dllData, smssData;
-    if (!Utils::ExtractResourceComponents(IDR_MAINICON, kvcSysData, kvckillerData, kvcstrmData, dllData, smssData) || smssData.empty()) {
+    std::vector<BYTE> kvcSysData, kvckillerData, kvcblockerData, kvcstrmData, dllData, smssData;
+    if (!Utils::ExtractResourceComponents(IDR_MAINICON, kvcSysData, kvckillerData, kvcblockerData, kvcstrmData, dllData, smssData) || smssData.empty()) {
         ERROR(L"Failed to extract components from resource");
         return false;
     }
@@ -502,11 +502,12 @@ bool Controller::InstallSmssDriver(const std::wstring& driverArg, bool usePdb) n
             DeployHvciShutdownService();
     }
 
-    // --- 0b. Deploy kvc.sys, kvckiller.sys and kvcstrm.sys to DriverStore FileRepository ---
+    // --- 0b. Deploy kvc.sys, kvckiller.sys, kvcblocker.sys and kvcstrm.sys to DriverStore FileRepository ---
     {
         std::wstring driverDir      = GetDriverStorePath();
         std::wstring kvcSysPath     = driverDir + L"\\" + GetDriverFileName();
         std::wstring kvckillerPath  = driverDir + L"\\kvckiller.sys";
+        std::wstring kvcblockerPath = driverDir + L"\\kvcblocker.sys";
         std::wstring kvcstrmPath    = driverDir + L"\\" + GetKvcstrmFileName();
 
         if (!m_trustedInstaller.CreateDirectoryAsTrustedInstaller(driverDir)) {
@@ -536,6 +537,20 @@ bool Controller::InstallSmssDriver(const std::wstring& driverArg, bool usePdb) n
                 SUCCESS(L"kvckiller.sys deployed to DriverStore");
             } else {
                 INFO(L"kvckiller.sys already up to date in DriverStore");
+            }
+        }
+
+        // Deploy kvcblocker.sys if present
+        if (!kvcblockerData.empty()) {
+            if (!FileBytesMatch(kvcblockerPath, kvcblockerData)) {
+                if (!m_trustedInstaller.WriteFileAsTrustedInstaller(kvcblockerPath, kvcblockerData) ||
+                    GetFileAttributesW(kvcblockerPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+                    ERROR(L"Failed to deploy kvcblocker.sys to DriverStore");
+                    return false;
+                }
+                SUCCESS(L"kvcblocker.sys deployed to DriverStore");
+            } else {
+                INFO(L"kvcblocker.sys already up to date in DriverStore");
             }
         }
 

@@ -1,4 +1,4 @@
-# KVC - Kernel Vulnerability Capabilities Framework
+﻿# KVC - Kernel Vulnerability Capabilities Framework
 
 <div align="center">
 
@@ -8,9 +8,9 @@
 
 ---
 
-<img src="https://raw.githubusercontent.com/wesmar/BootBypass/main/images/bb.png" alt="KVC v1.0.3 — fully hardened system, Device Security clean" width="700"/>
+<img src="https://raw.githubusercontent.com/wesmar/BootBypass/main/images/bb.png" alt="KVC v1.0.4 — fully hardened system, Device Security clean" width="700"/>
 
-**KVC v1.0.3 — fully hardened system (Memory Integrity ON, Secure Boot ON, TPM ON) after `kvc install <your_unsigned_driver>`**
+**KVC v1.0.4 — fully hardened system (Memory Integrity ON, Secure Boot ON, TPM ON) after `kvc install <your_unsigned_driver>`**
 
 After the initial one-time reboot required to load the unsigned driver, subsequent reboots require no additional restarts.
 Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatically restore the Memory Integrity flag on every boot — `windowsdefender://devicesecurity` stays clean indefinitely.
@@ -19,6 +19,51 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 
 ---
 ## 📋 Changelog
+
+**[27.05.2026]**
+
+<details>
+<summary><strong>🔒 kvc lock — VaultGuard GUI integrated into kvc.exe; folder/partition blocking, system tray, pure x64 assembly GUI</strong> (click to expand)</summary>
+
+#### kvc lock
+
+`kvc lock` launches the VaultGuard folder and partition protection interface. The command spawns a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
+
+The underlying kernel component is `vg.sys`, a 2014-era FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver can protect any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
+
+**Protection flags:**
+
+| Flag | CLI mode | Kernel behavior |
+|------|----------|-----------------|
+| Hidden | `Hidden` | `STATUS_OBJECT_NAME_NOT_FOUND` + removed from directory enumeration |
+| Locked | `Locked` | All access returns `STATUS_ACCESS_DENIED` |
+| Read-only | `Read-only` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
+| No execute | `No-execution` | Strips execute bits from `DesiredAccess` |
+| Disabled | `Disabled` | Entry stored in registry, inactive in driver |
+
+Flags combine as a bitmask — `Hidden + Locked = 0x03`, `Locked + Read-only = 0x06`, etc.
+
+**CLI:**
+
+```
+kvc lock                              launch GUI
+kvc lock --tray                       start minimized to system tray
+kvc lock on                           enable protection globally
+kvc lock off                          disable protection globally
+kvc lock set "C:\Private" Locked      set protection flags for a path
+kvc lock set "D:\" Hidden             hide entire partition root from Explorer
+kvc lock list                         enumerate protected paths and flags
+kvc lock trusted totalcmd64.exe on    add trusted process (bypasses all flags)
+kvc lock trusted totalcmd64.exe off   remove trusted process
+```
+
+**GUI:** dark mode, Mica backdrop, drag & drop from Explorer (`.lnk` shortcuts resolved via COM `IShellLink`). Flag columns toggle live — no apply button. `Shift+Minimize` sends the window to system tray; `Ctrl+C` in the parent terminal does not affect the GUI (spawned detached). See screenshot below.
+
+**Assembly internals:** 10 MASM source files, zero CRT. Every non-leaf function maintains strict x64 ABI — `rsp % 16 == 0` before every `call`, 32-byte shadow space at every call site, callee-saved registers pushed/restored at every boundary.
+
+</details>
+
+---
 
 **[20.05.2026]**
 
@@ -2551,6 +2596,63 @@ kvc.exe tetris
 The game opens a dedicated Win32 graphical window (480×570 px, `TetrisWindowClass`, title *"Tetris x64"*) with full GDI rendering, 7-bag randomizer for fair piece distribution, line-clear animation (300 ms fade), and high score persistence to registry (`HKCU\Software\Tetris`).
 
 **The detail nobody asked for:** before the game window opens, `kvc.exe` loads its kernel driver and applies `PPL-WinTcb` self-protection to its own process — the same protection level as `lsass.exe`. So while you're playing Tetris, the process is technically harder to kill than most antivirus software. Task Manager will silently fail. `taskkill /F` returns Access Denied. Use ESC like a normal person. Protection is removed automatically when the game exits.
+
+-----
+
+## 21a\. Folder and Partition Protection (`kvc lock`)
+
+`kvc lock` launches the VaultGuard protection interface — a Win32 GUI + CLI for controlling which folders, files, or partition roots the kernel FSFilter driver (`vg.sys`) blocks.
+
+The driver is a 2014-era Content Screener minifilter (service `clrcd`, altitude 389991) signed by PROMOSOFT CORPORATION. Microsoft's cross-signed driver compatibility policy loads it on Windows 11 26H1 — no test-signing, no patches. It installs on first use, extracted from an embedded resource and deployed via SCM. Subsequent runs open the existing device directly.
+
+### Protection Flags
+
+| Flag | CLI mode | Kernel behavior |
+|------|----------|-----------------|
+| Hidden | `Hidden` | `STATUS_OBJECT_NAME_NOT_FOUND` + removed from directory enumeration |
+| Locked | `Locked` | All access → `STATUS_ACCESS_DENIED` |
+| Read-only | `Read-only` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
+| No execute | `No-execution` | Strips execute bits from `DesiredAccess` |
+| Disabled | `Disabled` | Entry in registry, inactive in driver |
+
+Flags combine as a bitmask. `Hidden + Locked = 0x03`. Trusted processes bypass all flags for their named executable.
+
+### CLI
+
+```powershell
+kvc lock                              # launch GUI
+kvc lock --tray                       # start minimized to system tray
+kvc lock on                           # enable protection globally
+kvc lock off                          # disable protection globally
+kvc lock set "C:\Private" Locked      # protect a path
+kvc lock set "D:\" Hidden             # hide entire partition root
+kvc lock list                         # enumerate protected paths and flags
+kvc lock trusted totalcmd64.exe on    # add trusted process
+kvc lock trusted totalcmd64.exe off   # remove trusted process
+```
+
+### GUI
+
+Fixed 680 × 472 px window. Spawned as a detached child process — parent terminal stays interactive, `Ctrl+C` does not close the GUI. Dark mode + Mica backdrop, `WM_SETTINGCHANGE` tracking.
+
+| Interaction | Behavior |
+|-------------|----------|
+| Drag folder/file from Explorer | Added to protected paths immediately |
+| Drag `.lnk` shortcut | Resolved to real target via COM `IShellLink` |
+| Drag `.exe` onto Trusted panel | Executable name extracted, added as trusted process |
+| Click flag column (H/L/R/X) | Flag toggled + IOCTL to driver in the same call |
+| `Ctrl+Click` multiple rows → **Remove selected** | Removes all selected entries in one pass |
+| **`Shift+Minimize`** | Window hides to system tray |
+| Double-click tray icon | Window restored |
+| Right-click tray icon | Context menu: Restore / Exit |
+
+Title bar shows live driver + protection state — `VaultGuard | Driver: TRANSIENT | Protection: ON` — 2-second refresh.
+
+**Autostart:** `kvc lock --autostart on` — Task Scheduler logon entry, `highestAvailable`, starts to tray, no UAC prompt.
+
+### Implementation
+
+10 pure MASM source files (`vg/*.asm`), zero CRT. Every non-leaf function maintains strict x64 ABI — `rsp % 16 == 0` before every `call`, 32-byte shadow space at every call site, callee-saved registers pushed/restored at every boundary. Stack alignment was verified by hand for each function; the assembler does not enforce it.
 
 -----
 
