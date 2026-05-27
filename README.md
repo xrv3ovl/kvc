@@ -27,9 +27,11 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 
 #### kvc lock
 
-`kvc lock` launches the VaultGuard folder and partition protection interface. The command spawns a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
+`kvc lock` works as both CLI and full Win32 GUI — all subcommands (`on`, `off`, `set`, `list`, `trusted`) run headlessly from any prompt; `kvc lock` with no arguments (or `--tray`) launches the GUI. The GUI spawns as a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
 
 The underlying kernel component is `vg.sys`, a 2014-era FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver can protect any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
+
+The IOCTL interface was reverse-engineered from the original *Secure Folders* binary. During development the driver was tested under repeated load/unload cycles — despite being 12 years old, `vg.sys` held up: no pool leaks, no dangling references, no stale device objects. The cleanup paths are correct. In the kernel world, that's not a given.
 
 **Protection flags:**
 
