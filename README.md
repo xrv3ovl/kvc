@@ -39,24 +39,28 @@ The IOCTL interface was reverse-engineered from the original *Secure Folders* bi
 |------|----------|-----------------|
 | Hidden | `Hidden` | `STATUS_OBJECT_NAME_NOT_FOUND` + removed from directory enumeration |
 | Locked | `Locked` | All access returns `STATUS_ACCESS_DENIED` |
-| Read-only | `Read-only` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
-| No execute | `No-execution` | Strips execute bits from `DesiredAccess` |
-| Disabled | `Disabled` | Entry stored in registry, inactive in driver |
+| Read-only | `ReadOnly` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
+| No execute | `NoExec` | Strips execute bits from `DesiredAccess` |
+| All | `All` | Hidden + Locked + ReadOnly + NoExec combined |
 
-Flags combine as a bitmask — `Hidden + Locked = 0x03`, `Locked + Read-only = 0x06`, etc.
+Flags combine as a bitmask — `Hidden + Locked = 0x03`, `Locked + ReadOnly = 0x06`, etc.
 
 **CLI:**
 
 ```
-kvc lock                              launch GUI
-kvc lock --tray                       start minimized to system tray
+kvc lock                              show help
+kvc lock --gui                        launch GUI
+kvc lock --tray                       launch GUI minimized to system tray
 kvc lock on                           enable protection globally
 kvc lock off                          disable protection globally
-kvc lock set "C:\Private" Locked      set protection flags for a path
-kvc lock set "D:\" Hidden             hide entire partition root from Explorer
+kvc lock add "C:\Private" Locked      protect a path
+kvc lock add "D:\" Hidden             hide entire partition root from Explorer
+kvc lock remove "C:\Private"          remove path from protection
 kvc lock list                         enumerate protected paths and flags
-kvc lock trusted totalcmd64.exe on    add trusted process (bypasses all flags)
-kvc lock trusted totalcmd64.exe off   remove trusted process
+kvc lock status                       driver status, path count, trusted count
+kvc lock allow totalcmd64.exe         add trusted process (bypasses all flags)
+kvc lock unallow totalcmd64.exe       remove trusted process
+kvc lock clear                        remove all protected paths and trusted entries
 ```
 
 **GUI:** dark mode, Mica backdrop, drag & drop from Explorer (`.lnk` shortcuts resolved via COM `IShellLink`). Flag columns toggle live — no apply button. `Shift+Minimize` sends the window to system tray; `Ctrl+C` in the parent terminal does not affect the GUI (spawned detached).
@@ -892,16 +896,47 @@ Originally conceived as "Kernel Vulnerability **Control**," the framework's name
 
 ### Core Capabilities
 
-KVC offers a wide array of functionalities for security professionals:
+- **Driver Signature Enforcement (DSE) Control** — Three bypass modes: direct `g_CiOptions` patch (offline semantic probe, no PDB, no network), `SeCiCallbacks` redirection via `ZwFlushInstructionCache` (`--safe`, PatchGuard-compatible), and HVCI-aware path (`skci.dll` rename + RunOnce, one reboot). Fully restores original state after driver loading. Works on fully hardened systems (HVCI + Secure Boot + TPM).
 
-  * **Driver Signature Enforcement (DSE) Control:** Temporarily disable DSE even on systems with HVCI/VBS enabled, allowing the loading of unsigned drivers for research purposes .
-  * **Process Protection (PP/PPL) Manipulation:** Modify or remove Protected Process Light (PPL) and Protected Process (PP) protections applied to critical system processes like LSASS, facilitating memory analysis and manipulation where standard tools fail .
-  * **Advanced Memory Dumping:** Create comprehensive memory dumps of protected processes (e.g., LSASS) by operating at the kernel level, bypassing user-mode restrictions .
-  * **Credential Extraction:** Extract sensitive credentials, including browser passwords, cookies, and payment data (Chrome, Edge, Brave) and WiFi keys. Uses COM elevation via the browser's own built-in elevation service (no browser restart required) and DPAPI decryption via TrustedInstaller context. Full browser extraction requires `kvc_pass.exe` + `kvc_crypt.dll` (deployed as `kvc.dat` via `kvc setup`). LSASS minidump analysis requires `kvcforensic.dat` (`kvc analyze`) — both modules are auto-downloaded on demand if missing.
-  * **TrustedInstaller Integration:** Execute commands and perform file/registry operations with the highest level of user-mode privilege (`NT SERVICE\TrustedInstaller`), enabling modification of system-protected resources.
-  * **Windows Defender Management:** Permanently disable/enable the core security engine via IFEO loader intercept (`MsMpEng.exe` → `Debugger=systray.exe`). `kvckiller.sys` (digitally signed — no DSE bypass, works on HVCI systems) kills the running engine immediately after the IFEO block is written — **no restart required on any system**. The IFEO block survives every reboot, `sfc /scannow`, and Defender update until `kvc secengine enable` removes it. `enable` calls `StartService(WinDefend)` + `SecurityHealthService` via SCM; `MsMpEng.exe` launches within seconds.
-  * **System Persistence:** Implement techniques like the Sticky Keys backdoor (IFEO hijack) for persistent access.
-  * **Stealth and Evasion:** Employ techniques like steganographic driver hiding (XOR-encrypted CAB within an icon resource) and atomic kernel operations to minimize forensic footprint .
+- **PP/PPL Manipulation** — Read and write `EPROCESS.Protection` directly in kernel memory. `kvc unprotect`, `kvc protect`, `kvc set`, `kvc restore`. Session state persisted across reboots (`HKCU\Software\kvc\Sessions\<BootID>`).
+
+- **Process Signature Spoofing** — Write `SignatureLevel` + `SectionSignatureLevel` in `EPROCESS` alongside the Protection byte. Auto-calculated optimal values on `kvc protect`/`kvc set`; manual surgical control via `kvc spoof <pid> <ExeSigHex> <DllSigHex>`. Process becomes indistinguishable from a legitimately protected binary under kernel inspection.
+
+- **Memory Dumping** — `MiniDumpWriteDump` against PPL/PP processes via `EPROCESS.Protection` self-elevation before `OpenProcess`. `kvc dump lsass.exe` → `Downloads\lsass_PID.dmp`. After dump, KVC offers immediate `kvc analyze` if `kvcforensic.dat` is present.
+
+- **LSASS Credential Extraction (`kvcforensic.dat`)** — `kvc analyze <dump>` extracts MSV1_0 (NT/LM/SHA1), WDigest (cleartext), Kerberos sessions + tickets, DPAPI master keys, CredMan from any LSASS minidump. `kvc analyze lsass` auto-locates dump in CWD or Downloads. `kvc analyze --gui` opens graphical inspector. Supports all Windows builds from 10 1803 through 11 26H1 (build 28000+). Auto-downloaded on demand from GitHub if `kvcforensic.dat` is missing.
+
+- **Browser Credential Extraction (`kvc.dat`)** — Chrome, Edge, Brave: passwords + cookies + payment data **without closing the browser**. Kills only the network-service subprocess (releases DB file locks), injects `kvc_crypt.dll` via direct syscalls + reflective PE loader, decrypts App-Bound Encrypted master key via COM elevation (`IOriginalBaseElevator` for Chrome/Brave, `IEdgeElevatorFinal` for Edge) — no keychain, no DPAPI guessing, no browser restart. `kvc_pass.exe` + `kvc_crypt.dll` ship as a single XOR-encrypted `kvc.dat`, deployed by `kvc setup`. Auto-downloaded on demand if missing.
+
+- **WiFi Keys + DPAPI Secrets** — `kvc export secrets`: acquires TrustedInstaller token, extracts `DPAPI_SYSTEM` + `NL$KM` from `HKLM\SECURITY`, decrypts WiFi passwords via `netsh`, merges browser results, generates HTML + TXT report.
+
+- **TrustedInstaller Integration** — Acquires primary `NT SERVICE\TrustedInstaller` token via SYSTEM impersonation → SCM → TI token duplication. Used internally for protected registry writes and file operations. `kvc trusted <cmd>` runs any process as TrustedInstaller. `kvc install-context` adds "Run as TrustedInstaller" to Explorer right-click.
+
+- **Defender Management** — Permanent IFEO disable (`MsMpEng.exe` → `Debugger=systray.exe`) via offline hive edit, killed immediately by `kvckiller.sys` (digitally signed — no DSE bypass, works on HVCI). **No restart required on any system.** Survives every reboot, `sfc /scannow`, and Defender update until `kvc secengine enable`. RTP + Tamper Protection toggle via `IUIAutomation` ghost mode (no PowerShell, no WMI). Exclusions via `MSFT_MpPreference` COM direct. Automatic self-exclusion on every invocation.
+
+- **Kernel Primitive Layer — OmniDriver (`kvcstrm.sys`)** — Purpose-built KMDF driver (not derived from any CVE payload): cross-process virtual R/W (`MmCopyVirtualMemory`, KernelMode), batch R/W (64 ops/round-trip), PP/PPL process termination (`ZwTerminateProcess` kernel handle), `EPROCESS.PS_PROTECTION` direct write, physical memory R/W (`MmMapIoSpaceEx`), kernel pool alloc/free, CR0.WP-clear write to read-only memory, token elevation to SYSTEM, handle table close, arbitrary kernel call. Auto-lifecycle: loaded on demand, service entry deleted after use.
+
+- **Signed Kill Driver — kvckiller (`kvckiller.sys`)** — Digitally signed; loads without DSE bypass, without HVCI restart. Single IOCTL (`0x22201C`) terminates any process regardless of PP/PPL. Used by `kvc secengine disable` and as the automatic PP/PPL fallback in `kvc kill`. Auto-lifecycle: `wsftprm` service created, used, deleted.
+
+- **SMSS Boot-Phase Driver Loader (`kvc_smss.exe`)** — Native application (`SUBSYSTEM:NATIVE`, zero-CRT C) executed by SMSS before `services.exe`, before `winlogon.exe`, before any AV user-mode component. Resolves kernel offsets via built-in heuristic scanner (`FindKernelOffsetsLocally` — three independent passes, immune to Windows Update drift). Loads unsigned drivers via full DSE bypass cycle. Patches HVCI offline via chunked NK/VK hive walker. Registers `HvciShutdownSvc` (`AUTO_START` x64 assembly service) to restore Device Security appearance on the next boot — `windowsdefender://devicesecurity` stays clean. INI-driven (`C:\Windows\drivers.ini`): `LOAD`, `UNLOAD`, `RENAME`, `DELETE` actions.
+
+- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `vg.sys`, a 2014-era FSFilter Content Screener (service `clrcd`, altitude 389991) signed by PROMOSOFT CORPORATION — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL interface reverse-engineered from the original *Secure Folders* binary. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
+
+- **EFI Undervolting (`UnderVolter`)** — UEFI application that patches CFG Lock + OC Lock in the hidden `Setup` EFI NVRAM variable (IFR offset extraction) before the Windows bootloader. Clears both MSR locks without physical BIOS flashing. Applies negative voltage offsets and power limits per-domain (`IACORE`, `RING`, `ECORE`, `UNCORE`, `GTSLICE`, `GTUNSLICE`) via `MSR 0x150` (Intel OC Mailbox) on every subsequent boot. Intel 2nd–15th gen (Sandy Bridge through Arrow Lake). Enables systematic Plundervolt-class (CVE-2019-11157) research at UEFI privilege without physical probing equipment.
+
+- **Desktop Watermark Removal** — Modified `ExpIorerFrame.dll` (U+0049 capital I — visually identical to lowercase l) intercepts all five rendering paths across Vista through Build 28000+: `LoadStringW`, `ExtTextOutW`, `DrawTextW`, `BrandingLoadStringForEdition` (delay IAT by name), `DrawTextWithGlow` ord 126 (delay IAT by ordinal, INT entry `0x800000000000007E`).
+
+- **External Driver Management (`kvc driver`)** — `load/reload/stop/remove` with automatic DSE bypass (SeCiCallbacks, PatchGuard-resistant) and restore. `kvc driver load <path> [-s <0-4>]` loads any unsigned driver with configurable StartType; DSE patched before load, restored after. `reload` = stop + patch + start + unpatch. Full path or short name (`test` → `System32\drivers\test.sys`).
+
+- **Module Enumeration (`kvc modules`)** — List all loaded modules in any process including PPL-protected (kernel driver access). `kvc modules <pid> read <module> [offset] [size]` reads raw bytes from module memory (max 4096, default 256, offset in hex or decimal). Alias: `kvc mods`.
+
+- **Event Log Clearing (`kvc evtclear`)** — Clears all primary Windows event logs: Application, Security, Setup, System. Single command, TrustedInstaller context.
+
+- **Registry Backup / Restore / Defrag** — Full hive coverage: `SYSTEM`, `SOFTWARE`, `SAM`, `SECURITY`, `DEFAULT`, `BCD`, `NTUSER.DAT`, `UsrClass.dat`. Operations under TrustedInstaller context.
+
+- **Direct Syscalls** — SSN-sorted NTDLL Zw* export table, `AbiTramp.asm` trampoline (RCX → R10, shadow space, stack args). Bypasses user-mode EDR hooks entirely. Used throughout `kvc_pass.exe` for `NtAllocateVirtualMemory`, `NtWriteVirtualMemory`, `NtGetNextProcess`, and related primitives.
+
+- **Stealth and Evasion** — Five binaries steganographically embedded in `kvc.exe` icon resource (XOR-encrypted CAB, `.evtx` container name). Atomic driver operations (load → IOCTL → unload → delete service). Automatic Defender self-exclusion on every invocation including `kvc help`. Process + path exclusion via WMI COM direct (no `powershell.exe`).
 
 ### Intended Use
 
@@ -2615,24 +2650,28 @@ The driver is a 2014-era Content Screener minifilter (service `clrcd`, altitude 
 |------|----------|-----------------|
 | Hidden | `Hidden` | `STATUS_OBJECT_NAME_NOT_FOUND` + removed from directory enumeration |
 | Locked | `Locked` | All access → `STATUS_ACCESS_DENIED` |
-| Read-only | `Read-only` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
-| No execute | `No-execution` | Strips execute bits from `DesiredAccess` |
-| Disabled | `Disabled` | Entry in registry, inactive in driver |
+| Read-only | `ReadOnly` | Strips `FILE_WRITE_DATA` + `DELETE` from `DesiredAccess` |
+| No execute | `NoExec` | Strips execute bits from `DesiredAccess` |
+| All | `All` | Hidden + Locked + ReadOnly + NoExec combined |
 
 Flags combine as a bitmask. `Hidden + Locked = 0x03`. Trusted processes bypass all flags for their named executable.
 
 ### CLI
 
 ```powershell
-kvc lock                              # launch GUI
-kvc lock --tray                       # start minimized to system tray
+kvc lock                              # show help
+kvc lock --gui                        # launch GUI
+kvc lock --tray                       # launch GUI minimized to system tray
 kvc lock on                           # enable protection globally
 kvc lock off                          # disable protection globally
-kvc lock set "C:\Private" Locked      # protect a path
-kvc lock set "D:\" Hidden             # hide entire partition root
+kvc lock add "C:\Private" Locked      # protect a path
+kvc lock add "D:\" Hidden             # hide entire partition root
+kvc lock remove "C:\Private"          # remove path from protection
 kvc lock list                         # enumerate protected paths and flags
-kvc lock trusted totalcmd64.exe on    # add trusted process
-kvc lock trusted totalcmd64.exe off   # remove trusted process
+kvc lock status                       # driver status, path count, trusted count
+kvc lock allow totalcmd64.exe         # add trusted process (bypasses all flags)
+kvc lock unallow totalcmd64.exe       # remove trusted process
+kvc lock clear                        # remove all protected paths and trusted entries
 ```
 
 ### GUI
