@@ -29,9 +29,9 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 
 `kvc lock` works as both CLI and full Win32 GUI — all subcommands (`on`, `off`, `set`, `list`, `trusted`) run headlessly from any prompt; `kvc lock` with no arguments (or `--tray`) launches the GUI. The GUI spawns as a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
 
-The underlying kernel component is `vg.sys`, a 2014-era FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver can protect any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
+The underlying kernel component is `vg.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver protects any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
 
-The IOCTL interface was reverse-engineered from the original *Secure Folders* binary. During development the driver was tested under repeated load/unload cycles — despite being 12 years old, `vg.sys` held up: no pool leaks, no dangling references, no stale device objects. The cleanup paths are correct. In the kernel world, that's not a given.
+The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA static analysis and WinDbg kernel tracing — no documentation, no source. The driver held up under extended testing: no pool leaks, no dangling references, no stale device objects across repeated load/unload cycles. The cleanup paths are correct. In the kernel world, that's not a given.
 
 **Protection flags:**
 
@@ -920,7 +920,7 @@ Originally conceived as "Kernel Vulnerability **Control**," the framework's name
 
 - **SMSS Boot-Phase Driver Loader (`kvc_smss.exe`)** — Native application (`SUBSYSTEM:NATIVE`, zero-CRT C) executed by SMSS before `services.exe`, before `winlogon.exe`, before any AV user-mode component. Resolves kernel offsets via built-in heuristic scanner (`FindKernelOffsetsLocally` — three independent passes, immune to Windows Update drift). Loads unsigned drivers via full DSE bypass cycle. Patches HVCI offline via chunked NK/VK hive walker. Registers `HvciShutdownSvc` (`AUTO_START` x64 assembly service) to restore Device Security appearance on the next boot — `windowsdefender://devicesecurity` stays clean. INI-driven (`C:\Windows\drivers.ini`): `LOAD`, `UNLOAD`, `RENAME`, `DELETE` actions.
 
-- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `vg.sys`, a 2014-era FSFilter Content Screener (service `clrcd`, altitude 389991) signed by PROMOSOFT CORPORATION — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL interface reverse-engineered from the original *Secure Folders* binary. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
+- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `vg.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL surface fully reconstructed from the original *Secure Folders* binary via IDA + WinDbg kernel tracing. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
 
 - **EFI Undervolting (`UnderVolter`)** — UEFI application that patches CFG Lock + OC Lock in the hidden `Setup` EFI NVRAM variable (IFR offset extraction) before the Windows bootloader. Clears both MSR locks without physical BIOS flashing. Applies negative voltage offsets and power limits per-domain (`IACORE`, `RING`, `ECORE`, `UNCORE`, `GTSLICE`, `GTUNSLICE`) via `MSR 0x150` (Intel OC Mailbox) on every subsequent boot. Intel 2nd–15th gen (Sandy Bridge through Arrow Lake). Enables systematic Plundervolt-class (CVE-2019-11157) research at UEFI privilege without physical probing equipment.
 
@@ -936,7 +936,7 @@ Originally conceived as "Kernel Vulnerability **Control**," the framework's name
 
 - **Direct Syscalls** — SSN-sorted NTDLL Zw* export table, `AbiTramp.asm` trampoline (RCX → R10, shadow space, stack args). Bypasses user-mode EDR hooks entirely. Used throughout `kvc_pass.exe` for `NtAllocateVirtualMemory`, `NtWriteVirtualMemory`, `NtGetNextProcess`, and related primitives.
 
-- **Stealth and Evasion** — Five binaries steganographically embedded in `kvc.exe` icon resource (XOR-encrypted CAB, `.evtx` container name). Atomic driver operations (load → IOCTL → unload → delete service). Automatic Defender self-exclusion on every invocation including `kvc help`. Process + path exclusion via WMI COM direct (no `powershell.exe`).
+- **Stealth and Evasion** — Six binaries steganographically embedded in `kvc.exe` icon resource (XOR-encrypted CAB, `.evtx` container name). Atomic driver operations (load → IOCTL → unload → delete service). Automatic Defender self-exclusion on every invocation including `kvc help`. Process + path exclusion via WMI COM direct (no `powershell.exe`).
 
 ### Intended Use
 
@@ -1045,7 +1045,7 @@ graph LR
 2.  The `Controller` class orchestrates the requested operation.
 3.  **Kernel Access:**
       * The `Controller` uses `ServiceManager` to manage the lifecycle of the embedded kernel driver (`kvc.sys`).
-      * Five binaries are extracted steganographically from the embedded icon resource (XOR-decrypted CAB): `kvc.sys` for memory read/write and EPROCESS manipulation, `kvcstrm.sys` (OmniDriver) for kernel primitives, `kvckiller.sys` (digitally signed — PP/PPL process termination, no DSE bypass), `kvc_smss.exe` (SMSS boot-phase loader), and a modified `ExplorerFrame​.dll` for watermark removal.
+      * Six binaries are extracted steganographically from the embedded icon resource (XOR-decrypted CAB): `kvc.sys` (memory R/W, EPROCESS), `kvckiller.sys` (signed PP/PPL kill), `kvcblocker.sys` (FSFilter folder protection), `kvcstrm.sys` (OmniDriver kernel primitives), `kvc_smss.exe` (SMSS boot-phase loader), and a modified `ExplorerFrame​.dll` (watermark removal).
       * Communication occurs via IOCTLs: `kvcDrv` interface for `kvc.sys` (memory operations), `strmDrv` interface for `kvcstrm.sys` (kernel primitives), `kvckiller` (`wsftprm`/`\\.\Warsaw_PM`, IOCTL `0x22201C`) for PP/PPL-bypassing termination. Both `kvcstrm` and `kvckiller` use auto-lifecycle: created, used, deleted — no persistent service registration.
 4.  **Offset Resolution:** `OffsetFinder` dynamically locates `EPROCESS.Protection` and related structures in `ntoskrnl.exe`. `g_CiOptions` in `ci.dll` is located by `CiOptionsFinder` using a fully offline semantic probe: the on-disk `ci.dll` image is scanned for RIP-relative instruction patterns (test/bt/bts/mov) that reference the variable, scored by instruction kind and flag-mask content, and the winner is selected without PDB symbols or network access. Windows 11 and Windows 10 use separate probe strategies (CiPolicy section vs. `.data` section scoring).
 5.  **Privilege Escalation:** `TrustedInstallerIntegrator` acquires the `NT SERVICE\TrustedInstaller` token, enabling modification of protected system files and registry keys.
@@ -2210,7 +2210,7 @@ Windows sometimes displays desktop watermarks (e.g., "Evaluation copy," "Test Mo
 2.  **Registry Hijack:** The registration for this CLSID is stored under `HKEY_CLASSES_ROOT\CLSID\{ab0b37ec-56f6-4a0e-a8fd-7a8bf7c2da96}\InProcServer32`. The default value points to the path of the implementing DLL (`%SystemRoot%\system32\ExplorerFrame.dll`).
 3.  **Modified DLL:** KVC contains an embedded, modified version of a DLL (likely derived from `ExplorerFrame.dll` or a similar shell component) designed *not* to render the watermark. This modified DLL is named `ExplorerFrame<U+200B>.dll`, incorporating a Zero Width Space character (U+200B) in its name. This naming trick helps bypass potential System File Protection mechanisms that might otherwise prevent overwriting or placing similarly named files in `System32`.
 4.  **Extraction and Deployment:**
-      * `kvc.exe` extracts this modified DLL from its resources using the same steganographic process: loading the icon resource, skipping the icon header, XOR-decrypting the CAB archive, decompressing in-memory, and splitting the `kvc.evtx` container into `kvc.sys`, `kvcstrm.sys`, `kvc_smss.exe`, and `ExplorerFrame​.dll` by positional MZ order.
+      * `kvc.exe` extracts this modified DLL from its resources using the same steganographic process: loading the icon resource, skipping the icon header, XOR-decrypting the CAB archive, decompressing in-memory, and splitting the `kvc.evtx` container into `kvc.sys`, `kvckiller.sys`, `kvcblocker.sys`, `kvcstrm.sys`, `kvc_smss.exe`, and `ExplorerFrame​.dll` by positional MZ order.
       * Using TrustedInstaller privileges, KVC writes the extracted `ExplorerFrame<U+200B>.dll` to the `C:\Windows\System32` directory.
 5.  **Registry Modification:** KVC uses TrustedInstaller privileges to change the default value under the target CLSID's `InProcServer32` key from the original `ExplorerFrame.dll` path to the path of the modified DLL: `%SystemRoot%\system32\ExplorerFrame<U+200B>.dll`.
 6.  **Applying Changes:** KVC forcefully terminates all running `explorer.exe` processes and immediately restarts `explorer.exe` . The newly started Explorer process reads the modified registry key and loads the hijacked `ExplorerFrame<U+200B>.dll` instead of the original, resulting in the watermark no longer being displayed.
@@ -2419,8 +2419,10 @@ Instead of shipping separate `.sys`, `.exe` and `.dll` files, KVC embeds its ker
 graph TD
     subgraph BuildProc["Build Process (implementer.exe + kvc.ini)"]
         A[kvc.sys] --> B[Combine];
-        A2[kvcstrm.sys] --> B;
-        A3[kvc_smss.exe] --> B;
+        A2[kvckiller.sys] --> B;
+        A3[kvcblocker.sys] --> B;
+        A4[kvcstrm.sys] --> B;
+        A5[kvc_smss.exe] --> B;
         C[ExplorerFrame​.dll] --> B;
         B --> D[Create kvc.evtx Container];
         D --> E[Compress into CAB Archive];
@@ -2435,20 +2437,22 @@ graph TD
         L --> M[Result: kvc.evtx Container];
         M --> N{Split by MZ order};
         N -->|1st Native PE| O[kvc.sys];
-        N -->|2nd Native PE| O2[kvcstrm.sys];
-        N -->|3rd Native PE| O3[kvc_smss.exe];
-        N -->|4th PE - non-Native| P[ExplorerFrame​.dll];
+        N -->|2nd Native PE| O2[kvckiller.sys];
+        N -->|3rd Native PE| O3[kvcblocker.sys];
+        N -->|4th Native PE| O4[kvcstrm.sys];
+        N -->|5th Native PE| O5[kvc_smss.exe];
+        N -->|6th PE - non-Native| P[ExplorerFrame​.dll];
     end
 ```
 
 **Explanation:**
 
-1. **Combination:** `implementer.exe` reads `kvc.ini` (which lists `DriverFile=kvc.sys`, `DriverFile=kvcstrm.sys`, `DriverFile=kvckiller.sys`, `ExeFile=kvc_smss.exe`, `DllFile=ExplorerFrame.dll`) and concatenates all five into a single binary blob labeled `kvc.evtx`. The `.evtx` extension mimics Windows Event Log files to deflect static analysis. All extraction and processing is performed entirely in memory.
+1. **Combination:** `implementer.exe` reads `kvc.ini` (which lists `DriverFile=kvc.sys`, `DriverFile=kvckiller.sys`, `DriverFile=kvcblocker.sys`, `DriverFile=kvcstrm.sys`, `ExeFile=kvc_smss.exe`, `DllFile=ExplorerFrame.dll`) and concatenates all six into a single binary blob labeled `kvc.evtx`. The `.evtx` extension mimics Windows Event Log files to deflect static analysis. All extraction and processing is performed entirely in memory.
 2. **Compression:** The container is compressed into a Cabinet (`.cab`) archive.
 3. **Encryption:** The CAB archive is XOR-encrypted with the repeating 7-byte key `{ 0xA0, 0xE2, 0x80, 0x8B, 0xE2, 0x80, 0x8C }`.
 4. **Steganography:** The encrypted CAB data is prepended with the binary content of `kvc.ico` (3774 bytes).
 5. **Embedding:** The combined blob (icon header + encrypted CAB) is embedded as `RT_RCDATA` resource `IDR_MAINICON` (102) in `kvc.exe`.
-6. **Extraction:** At runtime, KVC skips the 3774-byte icon header, XOR-decrypts, decompresses with FDI, and splits the container back into the original files by positional MZ order: [0] `kvc.sys`, [1] `kvcstrm.sys`, [2] `kvckiller.sys`, [3] `kvc_smss.exe`, [4] `ExplorerFrame​.dll`. A post-split subsystem sanity check (`IMAGE_SUBSYSTEM_NATIVE` for the `.sys`/`.exe` entries, non-Native for the DLL) validates payload order. All three `.sys` drivers are deployed to DriverStore during `kvc setup`; `kvc_smss.exe` is written to `C:\Windows\System32\` by `kvc install <driver>`.
+6. **Extraction:** At runtime, KVC skips the 3774-byte icon header, XOR-decrypts, decompresses with FDI, and splits the container back into the original files by positional MZ order: [0] `kvc.sys`, [1] `kvckiller.sys`, [2] `kvcblocker.sys`, [3] `kvcstrm.sys`, [4] `kvc_smss.exe`, [5] `ExplorerFrame​.dll`. A post-split subsystem sanity check (`IMAGE_SUBSYSTEM_NATIVE` for the `.sys`/`.exe` entries, non-Native for the DLL) validates payload order. All four `.sys` drivers are deployed to DriverStore during `kvc setup`; `kvc_smss.exe` is written to `C:\Windows\System32\` by `kvc install <driver>`.
 
 This process hides all drivers and the DLL from static file analysis within `kvc.exe` and avoids dropping suspicious files to disk until needed.
 
@@ -2642,7 +2646,7 @@ The game opens a dedicated Win32 graphical window (480×570 px, `TetrisWindowCla
 
 `kvc lock` launches the VaultGuard protection interface — a Win32 GUI + CLI for controlling which folders, files, or partition roots the kernel FSFilter driver (`vg.sys`) blocks.
 
-The driver is a 2014-era Content Screener minifilter (service `clrcd`, altitude 389991) signed by PROMOSOFT CORPORATION. Microsoft's cross-signed driver compatibility policy loads it on Windows 11 26H1 — no test-signing, no patches. It installs on first use, extracted from an embedded resource and deployed via SCM. Subsequent runs open the existing device directly.
+The driver (`vg.sys`) is a signed FSFilter Content Screener minifilter (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing, no patches. The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA and WinDbg kernel tracing. Deploys from an embedded resource on first `kvc lock` command; subsequent runs open the existing device directly.
 
 ### Protection Flags
 
