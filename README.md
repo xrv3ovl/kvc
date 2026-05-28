@@ -16,6 +16,9 @@ After the initial one-time reboot required to load the unsigned driver, subseque
 Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatically restore the Memory Integrity flag on every boot — `windowsdefender://devicesecurity` stays clean indefinitely.
 
 </div>
+---
+
+> **📢 [28.05.2026]** Today, CLI and GUI interface consistency will be introduced in the `kvc lock` command using existing registry paths. Please be patient due to thorough regression testing and complex assembly code.
 
 ---
 ## 📋 Changelog
