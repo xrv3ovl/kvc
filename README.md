@@ -27,7 +27,7 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 
 #### kvc lock
 
-`kvc lock` works as both CLI and full Win32 GUI — all subcommands (`on`, `off`, `set`, `list`, `trusted`) run headlessly from any prompt; `kvc lock` with no arguments (or `--tray`) launches the GUI. The GUI spawns as a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
+`kvc lock` without arguments shows help. GUI: `lock --gui` / `lock --tray`. CLI subcommands: `on`, `off`, `add <path> <mode>`, `remove <path>`, `allow <app.exe>`, `unallow <app.exe>`, `list`, `status`, `clear`. The GUI spawns as a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
 
 The underlying kernel component is `kvcblocker.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver protects any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
 
@@ -2644,7 +2644,7 @@ The game opens a dedicated Win32 graphical window (480×570 px, `TetrisWindowCla
 
 ## 21a\. Folder and Partition Protection (`kvc lock`)
 
-`kvc lock` launches the VaultGuard protection interface — a Win32 GUI + CLI for controlling which folders, files, or partition roots the kernel FSFilter driver (`kvcblocker.sys`) blocks.
+`kvc lock` is a CLI + Win32 GUI interface for controlling which folders, files, or partition roots the kernel FSFilter driver (`kvcblocker.sys`) blocks. Bare `kvc lock` shows help; `lock --gui` / `lock --tray` opens the GUI.
 
 The driver (`kvcblocker.sys`) is a signed FSFilter Content Screener minifilter (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing, no patches. The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA and WinDbg kernel tracing. Deploys from an embedded resource on first `kvc lock` command; subsequent runs open the existing device directly.
 
