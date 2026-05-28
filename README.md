@@ -18,12 +18,9 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 </div>
 ---
 
-> **📢 [28.05.2026]** Today, CLI and GUI interface consistency will be introduced in the `kvc lock` command using existing registry paths. Please be patient due to thorough regression testing and complex assembly code.
-
----
 ## 📋 Changelog
 
-**[27.05.2026]**
+**[28.05.2026]**
 
 <details>
 <summary><strong>🔒 kvc lock — VaultGuard CLI/GUI integrated into kvc.exe; folder/partition blocking, system tray, pure x64 assembly</strong> (click to expand)</summary>
@@ -46,7 +43,7 @@ The IOCTL surface, flag bitmasks, registry layout, and device path were fully re
 | No execute | `NoExec` | Strips execute bits from `DesiredAccess` |
 | All | `All` | Hidden + Locked + ReadOnly + NoExec combined |
 
-Flags combine as a bitmask — `Hidden + Locked = 0x03`, `Locked + ReadOnly = 0x06`, etc.
+The GUI can toggle multiple flags on one path. The CLI accepts one mode per `add` call, or `All` for the full `Hidden | Locked | ReadOnly | NoExec` mask.
 
 **CLI:**
 
@@ -59,7 +56,7 @@ kvc lock off                          disable protection globally
 kvc lock add "C:\Private" Locked      protect a path
 kvc lock add "D:\" Hidden             hide entire partition root from Explorer
 kvc lock remove "C:\Private"          remove path from protection
-kvc lock list                         enumerate protected paths and flags
+kvc lock list                         list protected paths and trusted apps
 kvc lock status                       driver status, path count, trusted count
 kvc lock allow totalcmd64.exe         add trusted process (bypasses all flags)
 kvc lock unallow totalcmd64.exe       remove trusted process
@@ -923,7 +920,7 @@ Originally conceived as "Kernel Vulnerability **Control**," the framework's name
 
 - **SMSS Boot-Phase Driver Loader (`kvc_smss.exe`)** — Native application (`SUBSYSTEM:NATIVE`, zero-CRT C) executed by SMSS before `services.exe`, before `winlogon.exe`, before any AV user-mode component. Resolves kernel offsets via built-in heuristic scanner (`FindKernelOffsetsLocally` — three independent passes, immune to Windows Update drift). Loads unsigned drivers via full DSE bypass cycle. Patches HVCI offline via chunked NK/VK hive walker. Registers `HvciShutdownSvc` (`AUTO_START` x64 assembly service) to restore Device Security appearance on the next boot — `windowsdefender://devicesecurity` stays clean. INI-driven (`C:\Windows\drivers.ini`): `LOAD`, `UNLOAD`, `RENAME`, `DELETE` actions.
 
-- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `kvcblocker.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL surface fully reconstructed from the original *Secure Folders* binary via IDA + WinDbg kernel tracing. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
+- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `kvcblocker.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL surface fully reconstructed from the original *Secure Folders* binary via IDA + WinDbg kernel tracing. Modes: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All`. CLI commands: `kvc lock on/off/add/remove/allow/unallow/list/status/clear` plus `--gui` and `--tray`. Trusted process names are stored as lowercase executable basenames and bypass all flags. Protects files, folders, or full partition roots (`C:\`, `D:\`).
 
 - **EFI Undervolting (`UnderVolter`)** — UEFI application that patches CFG Lock + OC Lock in the hidden `Setup` EFI NVRAM variable (IFR offset extraction) before the Windows bootloader. Clears both MSR locks without physical BIOS flashing. Applies negative voltage offsets and power limits per-domain (`IACORE`, `RING`, `ECORE`, `UNCORE`, `GTSLICE`, `GTUNSLICE`) via `MSR 0x150` (Intel OC Mailbox) on every subsequent boot. Intel 2nd–15th gen (Sandy Bridge through Arrow Lake). Enables systematic Plundervolt-class (CVE-2019-11157) research at UEFI privilege without physical probing equipment.
 
@@ -2661,7 +2658,7 @@ The driver (`kvcblocker.sys`) is a signed FSFilter Content Screener minifilter (
 | No execute | `NoExec` | Strips execute bits from `DesiredAccess` |
 | All | `All` | Hidden + Locked + ReadOnly + NoExec combined |
 
-Flags combine as a bitmask. `Hidden + Locked = 0x03`. Trusted processes bypass all flags for their named executable.
+The GUI stores the flags as a bitmask and can combine them on one path. The CLI accepts one mode per `add` call, or `All` for the full `Hidden | Locked | ReadOnly | NoExec` mask. Trusted processes bypass all flags for their named executable.
 
 ### CLI
 
@@ -2674,7 +2671,7 @@ kvc lock off                          # disable protection globally
 kvc lock add "C:\Private" Locked      # protect a path
 kvc lock add "D:\" Hidden             # hide entire partition root
 kvc lock remove "C:\Private"          # remove path from protection
-kvc lock list                         # enumerate protected paths and flags
+kvc lock list                         # list protected paths and trusted apps
 kvc lock status                       # driver status, path count, trusted count
 kvc lock allow totalcmd64.exe         # add trusted process (bypasses all flags)
 kvc lock unallow totalcmd64.exe       # remove trusted process
@@ -2687,7 +2684,7 @@ Fixed 680 × 472 px window. Spawned as a detached child process — parent termi
 
 | Interaction | Behavior |
 |-------------|----------|
-| Drag folder/file from Explorer | Added to protected paths immediately |
+| Drag folder/file from Explorer | Staged in the protected paths list; click a flag column to persist it |
 | Drag `.lnk` shortcut | Resolved to real target via COM `IShellLink` |
 | Drag `.exe` onto Trusted panel | Executable name extracted, added as trusted process |
 | Click flag column (H/L/R/X) | Flag toggled + IOCTL to driver in the same call |
@@ -2697,8 +2694,6 @@ Fixed 680 × 472 px window. Spawned as a detached child process — parent termi
 | Right-click tray icon | Context menu: Restore / Exit |
 
 Title bar shows live driver + protection state — `VaultGuard | Driver: TRANSIENT | Protection: ON` — 2-second refresh.
-
-**Autostart:** `kvc lock --autostart on` — Task Scheduler logon entry, `highestAvailable`, starts to tray, no UAC prompt.
 
 ### Implementation
 
