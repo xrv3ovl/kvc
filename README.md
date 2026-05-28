@@ -29,7 +29,7 @@ Set `RestoreHVCI=YES` in `C:\Windows\drivers.ini` to have `kvc_smss` automatical
 
 `kvc lock` works as both CLI and full Win32 GUI — all subcommands (`on`, `off`, `set`, `list`, `trusted`) run headlessly from any prompt; `kvc lock` with no arguments (or `--tray`) launches the GUI. The GUI spawns as a detached child process (`DETACHED_PROCESS | CREATE_NO_WINDOW`) so the parent terminal stays usable — `Ctrl+C` does not kill the GUI.
 
-The underlying kernel component is `vg.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver protects any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
+The underlying kernel component is `kvcblocker.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991, device `\\.\BE79F7D853E643089D51EDCDA79805C4`) signed by PROMOSOFT CORPORATION. It loads on Windows 11 26H1 via the legacy cross-signed driver compatibility mechanism — no test-signing, no patches. The driver protects any path the kernel recognises: folders, individual files, or full partition roots (`C:\`, `D:\`).
 
 The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA static analysis and WinDbg kernel tracing — no documentation, no source. The driver held up under extended testing: no pool leaks, no dangling references, no stale device objects across repeated load/unload cycles. The cleanup paths are correct. In the kernel world, that's not a given.
 
@@ -920,7 +920,7 @@ Originally conceived as "Kernel Vulnerability **Control**," the framework's name
 
 - **SMSS Boot-Phase Driver Loader (`kvc_smss.exe`)** — Native application (`SUBSYSTEM:NATIVE`, zero-CRT C) executed by SMSS before `services.exe`, before `winlogon.exe`, before any AV user-mode component. Resolves kernel offsets via built-in heuristic scanner (`FindKernelOffsetsLocally` — three independent passes, immune to Windows Update drift). Loads unsigned drivers via full DSE bypass cycle. Patches HVCI offline via chunked NK/VK hive walker. Registers `HvciShutdownSvc` (`AUTO_START` x64 assembly service) to restore Device Security appearance on the next boot — `windowsdefender://devicesecurity` stays clean. INI-driven (`C:\Windows\drivers.ini`): `LOAD`, `UNLOAD`, `RENAME`, `DELETE` actions.
 
-- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `vg.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL surface fully reconstructed from the original *Secure Folders* binary via IDA + WinDbg kernel tracing. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
+- **Folder and Partition Protection (`kvc lock`)** — CLI + full Win32 GUI. Backed by `kvcblocker.sys`, a signed FSFilter Content Screener (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing. IOCTL surface fully reconstructed from the original *Secure Folders* binary via IDA + WinDbg kernel tracing. Flags: `Hidden`, `Locked`, `ReadOnly`, `NoExec`, `All` (bitmask-combinable). `kvc lock add/remove/allow/unallow/clear/status`. Trusted process list bypasses all flags per named executable. Protects files, folders, or full partition roots (`C:\`, `D:\`).
 
 - **EFI Undervolting (`UnderVolter`)** — UEFI application that patches CFG Lock + OC Lock in the hidden `Setup` EFI NVRAM variable (IFR offset extraction) before the Windows bootloader. Clears both MSR locks without physical BIOS flashing. Applies negative voltage offsets and power limits per-domain (`IACORE`, `RING`, `ECORE`, `UNCORE`, `GTSLICE`, `GTUNSLICE`) via `MSR 0x150` (Intel OC Mailbox) on every subsequent boot. Intel 2nd–15th gen (Sandy Bridge through Arrow Lake). Enables systematic Plundervolt-class (CVE-2019-11157) research at UEFI privilege without physical probing equipment.
 
@@ -2644,9 +2644,9 @@ The game opens a dedicated Win32 graphical window (480×570 px, `TetrisWindowCla
 
 ## 21a\. Folder and Partition Protection (`kvc lock`)
 
-`kvc lock` launches the VaultGuard protection interface — a Win32 GUI + CLI for controlling which folders, files, or partition roots the kernel FSFilter driver (`vg.sys`) blocks.
+`kvc lock` launches the VaultGuard protection interface — a Win32 GUI + CLI for controlling which folders, files, or partition roots the kernel FSFilter driver (`kvcblocker.sys`) blocks.
 
-The driver (`vg.sys`) is a signed FSFilter Content Screener minifilter (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing, no patches. The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA and WinDbg kernel tracing. Deploys from an embedded resource on first `kvc lock` command; subsequent runs open the existing device directly.
+The driver (`kvcblocker.sys`) is a signed FSFilter Content Screener minifilter (service `clrcd`, altitude 389991) — loads on Windows 11 26H1 via legacy cross-signed driver compatibility, no test-signing, no patches. The IOCTL surface, flag bitmasks, registry layout, and device path were fully reconstructed from the original *Secure Folders* binary via IDA and WinDbg kernel tracing. Deploys from an embedded resource on first `kvc lock` command; subsequent runs open the existing device directly.
 
 ### Protection Flags
 
