@@ -38,6 +38,13 @@ extern "C" INT_PTR IoctlAddTrusted(const WCHAR* name);
 extern "C" INT_PTR IoctlRemoveTrusted(const WCHAR* name);
 extern "C" INT_PTR IoctlClearAll();
 
+// Registry persistence from vg\config.asm (HKCU\Software\kvc\lock\*)
+extern "C" void ConfigSavePath(const WCHAR* path, DWORD flags);
+extern "C" void ConfigRemovePath(const WCHAR* path);
+extern "C" void ConfigSaveTrusted(const WCHAR* name);
+extern "C" void ConfigRemoveTrusted(const WCHAR* name);
+extern "C" void ConfigLoad();
+
 // ============================================================================
 // GLOBAL STATE
 // ============================================================================
@@ -425,6 +432,7 @@ int HandleLockCommand(int argc, wchar_t* argv[]) {
         else { ERROR(L"Unknown mode: %s  (Hidden|Locked|ReadOnly|NoExec|All)", mode.c_str()); return 1; }
         if (!g_controller->EnsureBlockerDriver()) return 1;
         if (!IoctlAddPath(flags, argv[3])) { ERROR(L"Failed to add path"); return 1; }
+        ConfigSavePath(argv[3], flags);
         SUCCESS(L"Protected: %s [%s]", argv[3], mode.c_str());
         return 0;
     }
@@ -432,6 +440,7 @@ int HandleLockCommand(int argc, wchar_t* argv[]) {
         if (argc < 4) { ERROR(L"Usage: kvc lock remove <path>"); return 1; }
         if (!g_controller->EnsureBlockerDriver()) return 1;
         if (!IoctlRemovePath(argv[3])) { ERROR(L"Failed to remove path"); return 1; }
+        ConfigRemovePath(argv[3]);
         SUCCESS(L"Unprotected: %s", argv[3]);
         return 0;
     }
@@ -439,24 +448,66 @@ int HandleLockCommand(int argc, wchar_t* argv[]) {
         if (argc < 4) { ERROR(L"Usage: kvc lock allow <app.exe>"); return 1; }
         if (!g_controller->EnsureBlockerDriver()) return 1;
         if (!IoctlAddTrusted(argv[3])) { ERROR(L"Failed to add trusted app"); return 1; }
+        ConfigSaveTrusted(argv[3]);
         SUCCESS(L"Trusted: %s", argv[3]);
         return 0;
     }
     if (sub == L"unallow") {
         if (argc < 4) { ERROR(L"Usage: kvc lock unallow <app.exe>"); return 1; }
         if (!g_controller->EnsureBlockerDriver()) return 1;
-        IoctlRemoveTrusted(argv[3]);
-        INFO(L"Removed from trusted (all trusted cleared, registry reloaded)");
+        ConfigRemoveTrusted(argv[3]);
+        IoctlRemoveTrusted(argv[3]);  // clears all trusted from driver
+        ConfigLoad();                 // reloads remaining from registry
+        INFO(L"Removed from trusted: %s", argv[3]);
         return 0;
     }
     if (sub == L"list") {
-        std::wstring s = g_controller->GetBlockerStatus();
-        INFO(L"kvcblocker: %s", s.c_str());
+        HKEY hKey = nullptr;
+        bool anyPaths = false, anyTrusted = false;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\kvc\\lock\\Paths",
+                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            WCHAR name[MAX_PATH + 1];
+            DWORD flags = 0, nameCch, dataCb, type;
+            for (DWORD i = 0; ; i++) {
+                nameCch = MAX_PATH + 1; dataCb = sizeof(DWORD);
+                if (RegEnumValueW(hKey, i, name, &nameCch, nullptr,
+                                  &type, reinterpret_cast<BYTE*>(&flags),
+                                  &dataCb) == ERROR_NO_MORE_ITEMS) break;
+                wchar_t mode[48] = {};
+                if (flags & 0x01) wcscat_s(mode, L"Hidden ");
+                if (flags & 0x02) wcscat_s(mode, L"Locked ");
+                if (flags & 0x04) wcscat_s(mode, L"ReadOnly ");
+                if (flags & 0x08) wcscat_s(mode, L"NoExec ");
+                if (!mode[0]) wcscpy_s(mode, L"inactive");
+                else mode[wcslen(mode) - 1] = L'\0';
+                wprintf(L"  [path]    %-60s [%s]\n", name, mode);
+                anyPaths = true;
+            }
+            RegCloseKey(hKey);
+        }
+        if (!anyPaths) INFO(L"No protected paths");
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\kvc\\lock\\Trusted",
+                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            WCHAR name[MAX_PATH + 1];
+            DWORD nameCch;
+            for (DWORD i = 0; ; i++) {
+                nameCch = MAX_PATH + 1;
+                if (RegEnumValueW(hKey, i, name, &nameCch,
+                                  nullptr, nullptr, nullptr,
+                                  nullptr) == ERROR_NO_MORE_ITEMS) break;
+                wprintf(L"  [trusted]  %s\n", name);
+                anyTrusted = true;
+            }
+            RegCloseKey(hKey);
+        }
+        if (!anyTrusted) INFO(L"No trusted apps");
         return 0;
     }
     if (sub == L"clear") {
         if (!g_controller->EnsureBlockerDriver()) return 1;
         IoctlClearAll();
+        RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\kvc\\lock\\Paths");
+        RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\kvc\\lock\\Trusted");
         SUCCESS(L"All protected paths and trusted entries cleared");
         return 0;
     }

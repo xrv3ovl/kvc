@@ -4,7 +4,7 @@
 ; Author: Marek Wesołowski (wesmar)
 ; Purpose: SysListView32 column/item management. Refresh both lists from:
 ;          - Paths: scanned from driver IOCTL buffer (DWORD flags + WCHAR path)
-;          - Trusted: enumerated from HKCU\Software\VG\Trusted (driver does
+;          - Trusted: enumerated from HKCU\Software\kvc\lock\Trusted (driver does
 ;                     not return reliable process names)
 ;          Flicker eliminated via WM_SETREDRAW freeze/thaw + InvalidateRect.
 ;          Paths shown as DOS via QueryDosDeviceW cache.
@@ -49,8 +49,8 @@ PUBLIC str_empty
 str_check       dw 2611h,0          ; ☑ checked box
 str_empty       dw 2610h,0          ; ☐ empty box
 
-lv_str_trust_key dw 'S','o','f','t','w','a','r','e','\','V','G','\','T','r','u','s','t','e','d',0
-lv_str_paths_key dw 'S','o','f','t','w','a','r','e','\','V','G','\','P','a','t','h','s',0
+lv_str_trust_key dw 'S','o','f','t','w','a','r','e','\','k','v','c','\','l','o','c','k','\','T','r','u','s','t','e','d',0
+lv_str_paths_key dw 'S','o','f','t','w','a','r','e','\','k','v','c','\','l','o','c','k','\','P','a','t','h','s',0
 
 ; ==============================================================================
 ; DATA
@@ -601,7 +601,7 @@ _LvSelectByText endp
 ;
 ; Both ListViews repopulated with redraw frozen to eliminate flicker.
 ; Paths: scan g_ioBuf for {DWORD flags, WCHAR \path, null} records.
-; Trusted: enumerate HKCU\Software\VG\Trusted via RegEnumValueW.
+; Trusted: enumerate HKCU\Software\kvc\lock\Trusted via RegEnumValueW.
 ;
 ; Stack: entry rsp%16=8; push rbx,rsi,rdi,r12,r13,r14 (+48)→8; sub 48h (+72)→0 ✓
 ; RegEnumValueW 8 args: 4 stack slots at [+20h]..[+38h] (within 0x48 alloc).
@@ -828,7 +828,7 @@ RefreshLists proc
     mov     rcx, g_hwndLvTrusted
     call    SendMessageW
 
-    ; ── Open HKCU\Software\VG\Trusted ────────────────────────────────────────
+    ; ── Open HKCU\Software\kvc\lock\Trusted ─────────────────────────────────
     ; RegOpenKeyExW(HKCU, subkey, 0, KEY_READ, &lv_trust_hkey)  ; 5 args
     lea     rax, lv_trust_hkey
     mov     qword ptr [rsp + 20h], rax

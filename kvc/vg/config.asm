@@ -2,7 +2,7 @@
 ; Vault Guard - Registry Config Persistence
 ;
 ; Author: Marek Wesołowski (wesmar)
-; Registry root: HKCU\Software\VG
+; Registry root: HKCU\Software\kvc\lock
 ;   \Paths   value_name=path(WCHAR*), type=REG_DWORD, data=flags(DWORD)
 ;   \Trusted value_name=name(WCHAR*), type=REG_DWORD, data=1
 ;
@@ -40,8 +40,8 @@ EXTRN wcs_ascii_lower_inplace :PROC
     cfg_name_buf dw 520 dup(?)  ; value name / path buffer (MAX_PATH+1 WCHARs)
 
 .const
-    str_key_paths   dw 'S','o','f','t','w','a','r','e','\','V','G','\','P','a','t','h','s',0
-    str_key_trusted dw 'S','o','f','t','w','a','r','e','\','V','G','\','T','r','u','s','t','e','d',0
+    str_key_paths   dw 'S','o','f','t','w','a','r','e','\','k','v','c','\','l','o','c','k','\','P','a','t','h','s',0
+    str_key_trusted dw 'S','o','f','t','w','a','r','e','\','k','v','c','\','l','o','c','k','\','T','r','u','s','t','e','d',0
 
 .code
 
